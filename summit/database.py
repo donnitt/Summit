@@ -147,6 +147,30 @@ class Database:
                     notes TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL DEFAULT ''
                 );
+                CREATE TABLE IF NOT EXISTS split_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    target_amount REAL NOT NULL DEFAULT 0 CHECK (target_amount >= 0),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS split_expenses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INTEGER NOT NULL REFERENCES split_events(id) ON DELETE CASCADE,
+                    description TEXT NOT NULL,
+                    amount REAL NOT NULL CHECK (amount > 0),
+                    paid_by TEXT NOT NULL,
+                    participants TEXT NOT NULL,
+                    expense_date TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_split_expenses_event ON split_expenses(event_id);
+
+                CREATE TABLE IF NOT EXISTS categories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    kind TEXT NOT NULL DEFAULT 'expense' CHECK (kind IN ('income', 'expense')),
+                    predefined INTEGER NOT NULL DEFAULT 0 CHECK (predefined IN (0, 1))
+                );
                 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date);
                 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status, kind);
                 CREATE INDEX IF NOT EXISTS idx_fixed_expenses_active ON fixed_expenses(active, due_day);
@@ -165,6 +189,17 @@ class Database:
             self._ensure_column(connection, "investments", "average_price", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(connection, "investments", "notes", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(connection, "investments", "updated_at", "TEXT NOT NULL DEFAULT ''")
+            # Seed the predefined category catalog once.
+            if connection.execute("SELECT 1 FROM categories").fetchone() is None:
+                connection.executemany(
+                    "INSERT INTO categories (name, kind, predefined) VALUES (?, ?, 1)",
+                    [
+                        ("Transporte", "expense"), ("Autocuidado", "expense"), ("Alimentação", "expense"),
+                        ("Lazer", "expense"), ("Moradia", "expense"), ("Saúde", "expense"),
+                        ("Educação", "expense"), ("Serviços", "income"), ("Contratos", "income"),
+                        ("Vendas", "income"),
+                    ],
+                )
             if connection.execute("SELECT 1 FROM app_settings WHERE id = 1").fetchone() is None:
                 connection.execute(
                     "INSERT INTO app_settings (id, theme_mode, accent_color) VALUES (1, 'dark', '#8562ef')"
@@ -953,9 +988,132 @@ class Database:
             cursor = connection.execute("DELETE FROM investments WHERE id = ?", (int(investment_id),))
             self._ensure_updated(cursor, "Investimento não encontrado.")
 
+    def categories(self, kind: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM categories"
+        parameters: tuple[Any, ...] = ()
+        if kind in {"income", "expense"}:
+            query += " WHERE kind = ? OR predefined = 1"
+            parameters = (kind,)
+        query += " ORDER BY predefined DESC, name COLLATE NOCASE"
+        with self.connect() as connection:
+            return [dict(row) for row in connection.execute(query, parameters)]
+
+    def add_category(self, name: str, kind: str = "expense") -> dict[str, Any]:
+        cleaned = self._required_text(name, "categoria")
+        if kind not in {"income", "expense"}:
+            raise ValueError("Tipo de categoria inválido.")
+        with self.connect() as connection:
+            existing = connection.execute(
+                "SELECT * FROM categories WHERE name = ? COLLATE NOCASE", (cleaned,)
+            ).fetchone()
+            if existing:
+                return dict(existing)
+            cursor = connection.execute(
+                "INSERT INTO categories (name, kind, predefined) VALUES (?, ?, 0)", (cleaned, kind)
+            )
+            return dict(
+                id=cursor.lastrowid, name=cleaned, kind=kind, predefined=0
+            )
+
+    def rename_category(self, category_id: int, name: str) -> None:
+        cleaned = self._required_text(name, "categoria")
+        with self.connect() as connection:
+            try:
+                cursor = connection.execute(
+                    "UPDATE categories SET name = ? WHERE id = ? AND predefined = 0",
+                    (cleaned, int(category_id)),
+                )
+            except sqlite3.IntegrityError as error:
+                raise ValueError("Já existe uma categoria com este nome.") from error
+            self._ensure_updated(cursor, "Categoria não encontrada ou predefinida.")
+
+    def delete_category(self, category_id: int) -> None:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM categories WHERE id = ? AND predefined = 0", (int(category_id),)
+            )
+            self._ensure_updated(cursor, "Categoria não encontrada ou predefinida.")
+
+    def split_events(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            return [dict(row) for row in connection.execute("SELECT * FROM split_events ORDER BY id")]
+
+    def add_split_event(self, name: str, description: str = "", target_amount: float = 0) -> int:
+        values = (
+            self._required_text(name, "nome do evento"),
+            description.strip(),
+            self._positive(target_amount, "valor da meta", allow_zero=True),
+        )
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO split_events (name, description, target_amount) VALUES (?, ?, ?)",
+                values,
+            )
+            return int(cursor.lastrowid)
+
+    def update_split_event(self, event_id: int, name: str, description: str = "", target_amount: float = 0) -> None:
+        values = (
+            self._required_text(name, "nome do evento"),
+            description.strip(),
+            self._positive(target_amount, "valor da meta", allow_zero=True),
+        )
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE split_events SET name = ?, description = ?, target_amount = ? WHERE id = ?",
+                values + (int(event_id),),
+            )
+            self._ensure_updated(cursor, "Evento não encontrado.")
+
+    def delete_split_event(self, event_id: int) -> None:
+        with self.connect() as connection:
+            connection.execute("DELETE FROM split_events WHERE id = ?", (int(event_id),))
+
+    def split_expenses(self, event_id: int) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            return [dict(row) for row in connection.execute(
+                "SELECT * FROM split_expenses WHERE event_id = ? ORDER BY expense_date DESC, id DESC",
+                (int(event_id),),
+            )]
+
+    def add_split_expense(
+        self, event_id: int, description: str, amount: float,
+        paid_by: str, participants: list[str], expense_date: str,
+    ) -> None:
+        values = self._split_expense_values(description, amount, paid_by, participants, expense_date)
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO split_expenses (event_id, description, amount, paid_by, participants, expense_date)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (int(event_id),) + values,
+            )
+
+    def delete_split_expense(self, expense_id: int) -> None:
+        with self.connect() as connection:
+            cursor = connection.execute("DELETE FROM split_expenses WHERE id = ?", (int(expense_id),))
+            self._ensure_updated(cursor, "Despesa não encontrada.")
+
+    def _split_expense_values(
+        self, description: str, amount: float, paid_by: str,
+        participants: list[str], expense_date: str,
+    ) -> tuple[Any, ...]:
+        cleaned_people = [person.strip() for person in participants if person.strip()]
+        if not cleaned_people:
+            raise ValueError("Informe pelo menos um participante.")
+        return (
+            self._required_text(description, "descrição"),
+            self._positive(amount, "valor"),
+            self._required_text(paid_by, "quem pagou"),
+            ", ".join(cleaned_people),
+            self._iso_date(expense_date, "data"),
+        )
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "workspace": self.workspace(),
+            "split_events": self.split_events(),
+            "categories": self.categories(),
             "accounts": self.accounts(),
             "transactions": self.transactions(),
             "fixed_expenses": self.fixed_expenses(),

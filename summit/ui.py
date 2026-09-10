@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import csv
 import math
+import re
 import sqlite3
 from datetime import date, datetime
 from typing import Any, Callable
 
-from PySide6.QtCore import QDate, QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QDate, QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -27,6 +29,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSizeGrip,
     QSizePolicy,
     QSpinBox,
     QStackedWidget,
@@ -49,6 +52,27 @@ BLUE = "#64a8ff"
 CATEGORY_COLORS = (PURPLE, GREEN, ORANGE, BLUE, "#e96e95", "#756782")
 
 
+def app_icon(size: int = 64) -> QIcon:
+    """Official Summit brand icon: purple rounded square with a white peak (▲)."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    radius = size * 0.22
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#8562ef"))
+    painter.drawRoundedRect(QRectF(0, 0, size, size), radius, radius)
+    painter.setBrush(QColor("#ffffff"))
+    peak = QPainterPath()
+    peak.moveTo(size * 0.5, size * 0.2)
+    peak.lineTo(size * 0.82, size * 0.78)
+    peak.lineTo(size * 0.18, size * 0.78)
+    peak.closeSubpath()
+    painter.drawPath(peak)
+    painter.end()
+    return QIcon(pixmap)
+
+
 def label(text: str, object_name: str = "", word_wrap: bool = False) -> QLabel:
     widget = QLabel(text)
     if object_name:
@@ -64,6 +88,60 @@ def text_field(placeholder: str, value: str = "") -> QLineEdit:
     return field
 
 
+def eye_icon(closed: bool = False, color: str = "#a79bb2", size: int = 16) -> QIcon:
+    """A small hand-drawn, line-only eye icon (open or crossed-out/closed)."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(color))
+    pen.setWidthF(max(1.1, size * 0.09))
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    margin = size * 0.08
+    # Wider, almond-shaped eye for a more organic look (not stretched).
+    rect = QRectF(margin, size * 0.26, size - margin * 2, size * 0.48)
+    lid = QPainterPath()
+    lid.moveTo(rect.left(), rect.center().y())
+    lid.cubicTo(
+        rect.left() + rect.width() * 0.22, rect.top(),
+        rect.right() - rect.width() * 0.22, rect.top(),
+        rect.right(), rect.center().y(),
+    )
+    lid.cubicTo(
+        rect.right() - rect.width() * 0.22, rect.bottom(),
+        rect.left() + rect.width() * 0.22, rect.bottom(),
+        rect.left(), rect.center().y(),
+    )
+    painter.drawPath(lid)
+    if not closed:
+        pupil_radius = size * 0.11
+        painter.setBrush(QColor(color))
+        painter.drawEllipse(QPointF(rect.center().x(), rect.center().y()), pupil_radius, pupil_radius)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setBrush(QColor(color))
+        painter.drawEllipse(QPointF(rect.center().x(), rect.center().y()), pupil_radius, pupil_radius)
+    else:
+        painter.drawLine(
+            QPointF(margin * 1.2, size * 0.78),
+            QPointF(size - margin * 1.2, size * 0.22),
+        )
+    painter.end()
+    return QIcon(pixmap)
+
+
+_AMOUNT_RUN = re.compile(r"[0-9][0-9.,]*")
+
+
+def mask_amount(text: str) -> str:
+    """Replace the numeric portion of an already-formatted value with dots."""
+    if _AMOUNT_RUN.search(text):
+        return _AMOUNT_RUN.sub("••••", text, count=1)
+    return "••••"
+
+
 class MoneyField(QDoubleSpinBox):
     """Currency input whose current value is replaced on the first edit."""
 
@@ -77,6 +155,16 @@ class MoneyField(QDoubleSpinBox):
         if gaining_focus:
             QTimer.singleShot(0, self.selectAll)
 
+    def keyPressEvent(self, event: Any) -> None:
+        # With all text selected, Backspace/Delete must clear the value
+        # instead of being swallowed by the spin-box validation.
+        if event.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete) and self.selectedText():
+            self.setValue(0)
+            self.lineEdit().clear()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
 
 def money_field(value: float = 0, allow_negative: bool = False) -> MoneyField:
     field = MoneyField()
@@ -86,6 +174,7 @@ def money_field(value: float = 0, allow_negative: bool = False) -> MoneyField:
     field.setPrefix("R$ ")
     field.setKeyboardTracking(False)
     field.setValue(float(value))
+    field.setButtonSymbols(QAbstractSpinBox.NoButtons)
     return field
 
 
@@ -303,6 +392,93 @@ def select_combo_data(combo: QComboBox, value: Any) -> None:
         combo.setCurrentIndex(index)
 
 
+DEFAULT_CATEGORIES = (
+    "Transporte", "Autocuidado", "Alimentação", "Lazer", "Moradia",
+    "Saúde", "Educação", "Serviços", "Contratos", "Vendas",
+)
+
+
+class CategoryCombo(QComboBox):
+    """Editable combo that filters categories while typing and offers
+    instant creation of a brand-new category ("Criar categoria …")."""
+
+    def __init__(self, database: Database, kind: str = "expense", value: str = "") -> None:
+        super().__init__()
+        self.database = database
+        self.kind = kind
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._reload()
+        if value:
+            self.setCurrentText(value)
+        self.view().installEventFilter(self)
+        self.view().pressed.connect(self._on_item_pressed)
+        self.lineEdit().textEdited.connect(lambda _text: QTimer.singleShot(0, self._suggest))
+
+    def _reload(self) -> None:
+        current = self.currentText()
+        self.clear()
+        for item in self.database.categories(self.kind):
+            self.addItem(item["name"])
+        if current:
+            self.setCurrentText(current)
+
+    def refresh(self) -> None:
+        self._reload()
+
+    def _on_item_pressed(self, index: Any) -> None:
+        text = self.view().model().data(index, Qt.ItemDataRole.DisplayRole) or ""
+        self.hidePopup()
+        if text.startswith("✚ Criar categoria “"):
+            new_name = text.split("“", 1)[1].rstrip("”")
+            try:
+                self.database.add_category(new_name, self.kind)
+            except (ValueError, sqlite3.Error):
+                pass
+            self._reload()
+            self.setCurrentText(new_name)
+        else:
+            self.setCurrentText(text)
+
+    def current_category(self) -> str:
+        return self.currentText().strip()
+
+    def eventFilter(self, source: Any, event: Any) -> bool:
+        if event.type() == QtCore.QEvent.Type.KeyPress and source is self.view():
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if self.view().currentIndex().isValid():
+                    self.view().pressed.emit(self.view().currentIndex())
+                else:
+                    self.hidePopup()
+                return True
+            if event.key() == Qt.Key.Key_Backspace:
+                # Recompute suggestions on deletion before default handling.
+                QTimer.singleShot(0, self._suggest)
+        return super().eventFilter(source, event)
+
+    def keyPressEvent(self, event: Any) -> None:
+        super().keyPressEvent(event)
+        if event.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
+            QTimer.singleShot(0, self._suggest)
+
+    def _suggest(self) -> None:
+        """Filter the dropdown to matching categories; when the typed name
+        does not exist yet, offer instant creation as the first item."""
+        if not self.view().isVisible():
+            return
+        text = self.currentText().strip()
+        names = [item["name"] for item in self.database.categories(self.kind)]
+        matches = [name for name in names if text.casefold() in name.casefold()] if text else names
+        model = self.model()
+        model.removeRows(0, model.rowCount())
+        exists = text.casefold() in (name.casefold() for name in names)
+        if text and not exists:
+            self.addItem(f"✚ Criar categoria “{text}”")
+        for name in matches:
+            self.addItem(name)
+        self.view().setCurrentIndex(self.model().index(0, 0))
+
+
 def notes_field(placeholder: str, value: str = "") -> QTextEdit:
     field = QTextEdit(value)
     field.setPlaceholderText(placeholder)
@@ -352,14 +528,13 @@ def action_widget(edit_action: Callable[[], None], delete_action: Callable[[], N
 
 
 def confirm_delete(parent: QWidget, subject: str) -> bool:
-    answer = QMessageBox.question(
+    return ConfirmOverlay.ask(
         parent,
         "Confirmar exclusão",
         f"Excluir {subject}? Esta ação não pode ser desfeita.",
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        QMessageBox.StandardButton.No,
+        confirm_text="Excluir",
+        danger=True,
     )
-    return answer == QMessageBox.StandardButton.Yes
 
 
 class CashFlowChart(QWidget):
@@ -393,7 +568,11 @@ class CashFlowChart(QWidget):
         for index, item in enumerate(self.values):
             x = area.left() + index * step
             painter.setPen(QColor("#716778"))
-            painter.drawText(int(x - 18), area.bottom() + 9, 36, 18, Qt.AlignmentFlag.AlignCenter, item["label"])
+            painter.drawText(int(x - 18), area.bottom() + 4, 36, 14, Qt.AlignmentFlag.AlignCenter, item["label"])
+            range_text = item.get("range", "")
+            if range_text and not values_hidden():
+                painter.setPen(QColor("#5d5468"))
+                painter.drawText(int(x - 24), area.bottom() + 17, 48, 12, Qt.AlignmentFlag.AlignCenter, range_text)
             for key in points_by_key:
                 y = area.bottom() - (float(item[key]) / maximum) * area.height()
                 points_by_key[key].append(QPointF(x, y))
@@ -456,26 +635,52 @@ class DonutChart(QWidget):
 
 
 class MetricCard(QFrame):
+    """A dashboard metric tile with its own eye toggle.
+
+    ``value`` should be the value formatted as if values were visible
+    (i.e. computed with ``hidden=False``) — this card tracks its own
+    hidden state, seeded from the global privacy toggle but afterwards
+    fully independent of it, so a single card can be shown or hidden
+    on its own without affecting the rest of the app.
+    """
+
     def __init__(self, title: str, value: str, accent: str, object_name: str, detail: str) -> None:
         super().__init__()
         self.setObjectName(object_name)
         self.setMinimumHeight(137)
         self.setMaximumHeight(150)
+        self._value = value
+        self._hidden = values_hidden()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 15, 18, 15)
         head = QHBoxLayout()
         head.addWidget(label(title, "Muted"))
         head.addStretch()
-        icon = label("●")
-        icon.setStyleSheet(f"color: {accent}; font-size: 18px;")
-        head.addWidget(icon)
+        self._eye_button = QPushButton()
+        self._eye_button.setObjectName("VisibilityToggle")
+        self._eye_button.setIconSize(QSize(15, 15))
+        self._eye_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._eye_button.setFlat(True)
+        self._eye_button.clicked.connect(self._toggle)
+        head.addWidget(self._eye_button)
         layout.addLayout(head)
-        value_label = label(value, "MetricValue")
-        layout.addWidget(value_label)
+        self._value_label = label("", "MetricValue")
+        layout.addWidget(self._value_label)
         layout.addStretch()
         detail_label = label(detail, "Tiny")
         detail_label.setStyleSheet(f"color: {accent};")
         layout.addWidget(detail_label)
+        self._render()
+
+    def _render(self) -> None:
+        self._value_label.setText(mask_amount(self._value) if self._hidden else self._value)
+        # Closed/focused state uses the brand purple; open uses neutral gray.
+        self._eye_button.setIcon(eye_icon(closed=self._hidden, color="#8562ef" if self._hidden else "#a79bb2"))
+        self._eye_button.setToolTip("Mostrar este valor" if self._hidden else "Ocultar este valor")
+
+    def _toggle(self) -> None:
+        self._hidden = not self._hidden
+        self._render()
 
 
 class Panel(QFrame):
@@ -526,6 +731,11 @@ class DashboardPage(QWidget):
             option_button.setCheckable(True)
             option_button.setChecked(option_value == period)
             option_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            # Force legible fixed colors on the selected state regardless of
+            # the active theme (mirrors the Escuro/Claro fix above).
+            option_button.setStyleSheet(
+                f"QPushButton:checked{{background:{DEFAULT_ACCENT};color:#ffffff;}}"
+            )
             option_button.clicked.connect(
                 lambda _checked=False, selected=option_value: change_period(selected)
             )
@@ -537,10 +747,10 @@ class DashboardPage(QWidget):
         metrics = QGridLayout()
         metrics.setSpacing(13)
         cards = [
-            MetricCard("Saldo disponível", brl(stats["balance"]), PURPLE, "MetricPurple", "Visão consolidada"),
-            MetricCard(f'Entradas {stats["period_label"]}', brl(stats["income"]), GREEN, "MetricGreen", stats["period_title"]),
-            MetricCard(f'Saídas {stats["period_label"]}', brl(stats["expense"]), ORANGE, "MetricOrange", stats["period_title"]),
-            MetricCard("A receber", brl(stats["to_receive"]), BLUE, "MetricBlue", f'{stats["pending_income_count"]} lançamento(s) previsto(s)'),
+            MetricCard("Saldo disponível", brl(stats["balance"], hidden=False), PURPLE, "MetricPurple", "Visão consolidada"),
+            MetricCard(f'Entradas {stats["period_label"]}', brl(stats["income"], hidden=False), GREEN, "MetricGreen", stats["period_title"]),
+            MetricCard(f'Saídas {stats["period_label"]}', brl(stats["expense"], hidden=False), ORANGE, "MetricOrange", stats["period_title"]),
+            MetricCard("A receber", brl(stats["to_receive"], hidden=False), BLUE, "MetricBlue", f'{stats["pending_income_count"]} lançamento(s) previsto(s)'),
         ]
         for index, card in enumerate(cards):
             metrics.addWidget(card, 0, index)
@@ -635,7 +845,7 @@ class DashboardPage(QWidget):
             item.addWidget(label(name, "Tiny"))
             item.addStretch()
             percentage = round(amount / stats["expense"] * 100) if stats["expense"] else 0
-            item.addWidget(label(f"{percentage}%", "Tiny"))
+            item.addWidget(label(f"{brl(amount)} · {percentage}%", "Tiny"))
             list_layout.addLayout(item)
         if not stats["categories"]:
             list_layout.addWidget(label(f'Sem gastos {stats["period_label"]}', "Muted"))
@@ -1042,8 +1252,11 @@ class AccountsPage(QWidget):
             card = Panel(account["name"], account["account_type"])
             account_id = account["id"]
             is_hidden = account_overrides.get(account_id, values_hidden())
-            visibility = QPushButton("\U0001F441" if not is_hidden else "\U0001F441\u20e0")
+            visibility = QPushButton()
             visibility.setObjectName("VisibilityToggle")
+            visibility.setIcon(eye_icon(closed=is_hidden, color="#8562ef" if is_hidden else "#a79bb2"))
+            visibility.setIconSize(QSize(15, 15))
+            visibility.setFlat(True)
             visibility.setToolTip(
                 "Mostrar saldo desta conta" if is_hidden else "Ocultar saldo desta conta"
             )
@@ -1113,19 +1326,19 @@ class DebtsPage(QWidget):
         totals = QGridLayout()
         totals.setSpacing(13)
         totals.addWidget(MetricCard(
-            "Saldo devedor", brl(sum(float(item["outstanding_amount"]) for item in open_debts)),
+            "Saldo devedor", brl(sum(float(item["outstanding_amount"]) for item in open_debts), hidden=False),
             ORANGE, "MetricOrange", f"{len(open_debts)} dívida(s) aberta(s)",
         ), 0, 0)
         totals.addWidget(MetricCard(
-            "Vencidas", brl(sum(float(item["outstanding_amount"]) for item in overdue)),
+            "Vencidas", brl(sum(float(item["outstanding_amount"]) for item in overdue), hidden=False),
             "#ef7185", "MetricOrange", f"{len(overdue)} precisa(m) de atenção",
         ), 0, 1)
         totals.addWidget(MetricCard(
-            "Próximos 30 dias", brl(due_soon_amount),
+            "Próximos 30 dias", brl(due_soon_amount, hidden=False),
             BLUE, "MetricBlue", f"{len(due_soon)} parcela(s) estimada(s)",
         ), 0, 2)
         totals.addWidget(MetricCard(
-            "Valor já pago", brl(sum(float(item["total_amount"]) - float(item["outstanding_amount"]) for item in debts)),
+            "Valor já pago", brl(sum(float(item["total_amount"]) - float(item["outstanding_amount"]) for item in debts), hidden=False),
             GREEN, "MetricGreen", "Progresso acumulado",
         ), 0, 3)
         page.addLayout(totals)
@@ -1203,10 +1416,10 @@ class PlanningPage(QWidget):
         planned_monthly = sum(float(goal["monthly_contribution"]) for goal in goals)
         metrics = QGridLayout()
         metrics.setSpacing(13)
-        metrics.addWidget(MetricCard("Reservado nas metas", brl(saved), PURPLE, "MetricPurple", f"Objetivo total: {brl(total_target)}"), 0, 0)
-        metrics.addWidget(MetricCard("Aportes planejados", brl(planned_monthly), GREEN, "MetricGreen", "Valor mensal definido por você"), 0, 1)
-        metrics.addWidget(MetricCard("Custos fixos", brl(stats["fixed_total"]), ORANGE, "MetricOrange", "Compromisso mensal recorrente"), 0, 2)
-        metrics.addWidget(MetricCard("Resultado do mês", brl(stats["result"]), BLUE, "MetricBlue", f'Taxa de economia: {stats["savings_rate"]:.0f}%'), 0, 3)
+        metrics.addWidget(MetricCard("Reservado nas metas", brl(saved, hidden=False), PURPLE, "MetricPurple", f"Objetivo total: {brl(total_target, hidden=False)}"), 0, 0)
+        metrics.addWidget(MetricCard("Aportes planejados", brl(planned_monthly, hidden=False), GREEN, "MetricGreen", "Valor mensal definido por você"), 0, 1)
+        metrics.addWidget(MetricCard("Custos fixos", brl(stats["fixed_total"], hidden=False), ORANGE, "MetricOrange", "Compromisso mensal recorrente"), 0, 2)
+        metrics.addWidget(MetricCard("Resultado do mês", brl(stats["result"], hidden=False), BLUE, "MetricBlue", f'Taxa de economia: {stats["savings_rate"]:.0f}%'), 0, 3)
         page.addLayout(metrics)
 
         goals_panel = Panel("Metas", "Quanto falta, prazo e aporte necessário")
@@ -1307,9 +1520,9 @@ class InvestmentsPage(QWidget):
         profitability = (result / invested * 100) if invested else 0
         metrics = QGridLayout()
         metrics.setSpacing(13)
-        metrics.addWidget(MetricCard("Valor atual", brl(total), PURPLE, "MetricPurple", "Patrimônio investido"), 0, 0)
-        metrics.addWidget(MetricCard("Total aplicado", brl(invested), BLUE, "MetricBlue", "Custo acumulado"), 0, 1)
-        metrics.addWidget(MetricCard("Resultado", brl(result), GREEN if result >= 0 else ORANGE, "MetricGreen" if result >= 0 else "MetricOrange", "Ganho ou perda da carteira"), 0, 2)
+        metrics.addWidget(MetricCard("Valor atual", brl(total, hidden=False), PURPLE, "MetricPurple", "Patrimônio investido"), 0, 0)
+        metrics.addWidget(MetricCard("Total aplicado", brl(invested, hidden=False), BLUE, "MetricBlue", "Custo acumulado"), 0, 1)
+        metrics.addWidget(MetricCard("Resultado", brl(result, hidden=False), GREEN if result >= 0 else ORANGE, "MetricGreen" if result >= 0 else "MetricOrange", "Ganho ou perda da carteira"), 0, 2)
         metrics.addWidget(MetricCard("Rentabilidade", f"{profitability:+.2f}%", GREEN if result >= 0 else ORANGE, "MetricGreen" if result >= 0 else "MetricOrange", "Sobre o valor aplicado"), 0, 3)
         page.addLayout(metrics)
 
@@ -1405,6 +1618,7 @@ class AccountDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(save)
         form.addLayout(buttons)
+        add_frameless_dialog_bar(self)
 
     def _save(self) -> None:
         try:
@@ -1447,7 +1661,7 @@ class DebtDialog(QDialog):
 
         self.description = text_field("Ex.: Financiamento do notebook", source.get("description", ""))
         self.creditor = text_field("Ex.: Banco ou loja", source.get("creditor", ""))
-        self.category = text_field("Ex.: Equipamentos ou Empréstimo", source.get("category", ""))
+        self.category = CategoryCombo(database, "expense", source.get("category", ""))
         self.total = money_field(float(source.get("total_amount", 0)))
         self.outstanding = money_field(float(source.get("outstanding_amount", 0)))
         if not debt:
@@ -1501,11 +1715,12 @@ class DebtDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(save)
         form.addLayout(buttons)
+        add_frameless_dialog_bar(self)
 
     def _values(self) -> dict[str, Any]:
         return dict(
             description=self.description.text(), creditor=self.creditor.text(),
-            category=self.category.text(), total_amount=self.total.value(),
+            category=self.category.current_category(), total_amount=self.total.value(),
             outstanding_amount=self.outstanding.value(), due_date=self.due_date.iso_date(),
             installments_total=self.installments_total.value(),
             installments_paid=self.installments_paid.value(), scope=self.scope.currentData(),
@@ -1525,12 +1740,10 @@ class DebtDialog(QDialog):
         self.accept()
 
     def _settle(self) -> None:
-        answer = QMessageBox.question(
+        if not ConfirmOverlay.ask(
             self, "Confirmar quitação", "Confirmar que esta dívida foi totalmente quitada?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+            confirm_text="Quitar dívida",
+        ):
             return
         self.outstanding.setValue(0)
         self.installments_paid.setValue(self.installments_total.value())
@@ -1576,7 +1789,7 @@ class TransactionDialog(QDialog):
         self.kind.addItem("Entrada", "income")
         self.description = text_field("Ex.: Sessão de tatuagem")
         self.amount = money_field()
-        self.category = text_field("Ex.: Serviços, Casa ou Materiais")
+        self.category = CategoryCombo(database, "expense")
         self.transaction_date = DateField()
         self.status = QComboBox()
         self.status.addItem("Concluído", "paid")
@@ -1591,7 +1804,7 @@ class TransactionDialog(QDialog):
 
         source = transaction or {}
         self.description.setText(source.get("description", ""))
-        self.category.setText(source.get("category", ""))
+        self.category.setCurrentText(source.get("category", ""))
         self.amount.setValue(float(source.get("amount", 0)))
         self.transaction_date.setDate(
             QDate.fromString(source["transaction_date"], "yyyy-MM-dd")
@@ -1607,7 +1820,7 @@ class TransactionDialog(QDialog):
         fields = [
             ("Tipo", self.kind), ("Descrição", self.description), ("Valor", self.amount),
             ("Categoria", self.category), ("Data", self.transaction_date),
-            ("Situação", self.status), ("Uso", self.scope), ("Conta", self.account),
+            ("Situação", self.status), ("Uso", self.scope), ("Conta Corrente", self.account),
         ]
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
@@ -1635,12 +1848,13 @@ class TransactionDialog(QDialog):
         buttons.addWidget(save)
         form.addSpacing(8)
         form.addLayout(buttons)
+        add_frameless_dialog_bar(self)
 
     def _save(self) -> None:
         try:
             values = dict(
                 description=self.description.text(),
-                category=self.category.text(),
+                category=self.category.current_category(),
                 amount=self.amount.value(),
                 kind=self.kind.currentData(),
                 status=self.status.currentData(),
@@ -1707,8 +1921,9 @@ class FixedExpenseDialog(QDialog):
             "Ex.: Salário, contrato mensal ou aluguel" if fixed_kind == "income" else "Ex.: Aluguel, internet ou escola",
             source.get("description", ""),
         )
-        self.category = text_field(
-            "Ex.: Salário ou Contratos" if fixed_kind == "income" else "Ex.: Moradia ou Contas",
+        self.category = CategoryCombo(
+            database,
+            "income" if fixed_kind == "income" else "expense",
             source.get("category", ""),
         )
         self.amount = money_field(float(source.get("amount", 0)))
@@ -1737,7 +1952,7 @@ class FixedExpenseDialog(QDialog):
         fields = [
             ("Descrição", self.description), ("Categoria", self.category),
             ("Valor mensal", self.amount), ("Dia do vencimento", self.due_day),
-            ("Uso", self.scope), ("Conta usada", self.account),
+            ("Uso", self.scope), ("Conta Corrente", self.account),
         ]
         for index, (title, widget) in enumerate(fields):
             add_form_field(grid, index, title, widget)
@@ -1761,11 +1976,12 @@ class FixedExpenseDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(save)
         form.addLayout(buttons)
+        add_frameless_dialog_bar(self)
 
     def _save(self) -> None:
         try:
             values = dict(
-                description=self.description.text(), category=self.category.text(), amount=self.amount.value(),
+                description=self.description.text(), category=self.category.current_category(), amount=self.amount.value(),
                 due_day=self.due_day.value(), account_id=self.account.currentData(),
                 active=self.active.isChecked(), notes=self.notes.toPlainText(), scope=self.scope.currentData(),
             )
@@ -1856,6 +2072,7 @@ class GoalDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(save)
         form.addLayout(buttons)
+        add_frameless_dialog_bar(self)
 
     def _save(self) -> None:
         try:
@@ -1891,7 +2108,7 @@ class BudgetDialog(QDialog):
         form.setSpacing(10)
         form.addWidget(label("Limite por categoria", "PageTitle"))
         form.addWidget(label("O Summit compara este teto com seus gastos concluídos do mês.", "Muted"))
-        self.category = text_field("Use a mesma categoria dos lançamentos", source.get("category", ""))
+        self.category = CategoryCombo(database, "expense", source.get("category", ""))
         self.limit = money_field(float(source.get("monthly_limit", 0)))
         self.notes = notes_field("Objetivo ou regra para esta categoria", source.get("notes", ""))
         form.addWidget(label("Categoria", "FieldLabel"))
@@ -1911,10 +2128,11 @@ class BudgetDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(save)
         form.addLayout(buttons)
+        add_frameless_dialog_bar(self)
 
     def _save(self) -> None:
         try:
-            values = dict(category=self.category.text(), monthly_limit=self.limit.value(), notes=self.notes.toPlainText())
+            values = dict(category=self.category.current_category(), monthly_limit=self.limit.value(), notes=self.notes.toPlainText())
             if self.budget:
                 self.database.update_budget(self.budget["id"], **values)
             else:
@@ -1983,6 +2201,7 @@ class InvestmentDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(save)
         form.addLayout(buttons)
+        add_frameless_dialog_bar(self)
 
     def _save(self) -> None:
         try:
@@ -2065,10 +2284,10 @@ class ReportsPage(QWidget):
         layout.setSpacing(14)
         metrics = QGridLayout()
         metrics.setSpacing(13)
-        metrics.addWidget(MetricCard("Entradas", brl(income), GREEN, "MetricGreen", "Recebidas no período"), 0, 0)
-        metrics.addWidget(MetricCard("Gastos", brl(expense), ORANGE, "MetricOrange", "Pagos no período"), 0, 1)
-        metrics.addWidget(MetricCard("Resultado", brl(result), PURPLE, "MetricPurple", f"Margem: {margin:.1f}%"), 0, 2)
-        metrics.addWidget(MetricCard("Fixos mensais", brl(fixed), BLUE, "MetricBlue", "Compromissos recorrentes ativos"), 0, 3)
+        metrics.addWidget(MetricCard("Entradas", brl(income, hidden=False), GREEN, "MetricGreen", "Recebidas no período"), 0, 0)
+        metrics.addWidget(MetricCard("Gastos", brl(expense, hidden=False), ORANGE, "MetricOrange", "Pagos no período"), 0, 1)
+        metrics.addWidget(MetricCard("Resultado", brl(result, hidden=False), PURPLE, "MetricPurple", f"Margem: {margin:.1f}%"), 0, 2)
+        metrics.addWidget(MetricCard("Fixos mensais", brl(fixed, hidden=False), BLUE, "MetricBlue", "Compromissos recorrentes ativos"), 0, 3)
         layout.addLayout(metrics)
 
         analysis = QHBoxLayout()
@@ -2160,6 +2379,226 @@ class ReportsPage(QWidget):
         QMessageBox.information(self, "Relatório exportado", f"Arquivo salvo em:\n{path}")
 
 
+class SplitEventDialog(QDialog):
+    saved = Signal()
+
+    def __init__(self, database: Database, parent: QWidget | None = None, event: dict[str, Any] | None = None) -> None:
+        super().__init__(parent)
+        self.database = database
+        self.event = event
+        self.setWindowTitle(("Editar" if event else "Novo") + " grupo · Summit")
+        self.setModal(True)
+        self.setMinimumWidth(520)
+        source = event or {}
+        form = QVBoxLayout(self)
+        form.setContentsMargins(26, 24, 26, 24)
+        form.setSpacing(10)
+        form.addWidget(label("Editar grupo" if event else "Novo grupo de despesas", "PageTitle"))
+        form.addWidget(label("Viagem em grupo, reforma, construção ou qualquer evento compartilhado.", "Muted", True))
+        self.name = text_field("Ex.: Viagem para a praia", source.get("name", ""))
+        self.description = text_field("Detalhe do evento (opcional)", source.get("description", ""))
+        self.target = money_field(float(source.get("target_amount", 0)))
+        self.target.setToolTip("Quanto vocês planejam gastar no total (opcional)")
+        form.addWidget(label("Nome do grupo", "FieldLabel"))
+        form.addWidget(self.name)
+        form.addWidget(label("Descrição", "FieldLabel"))
+        form.addWidget(self.description)
+        form.addWidget(label("Meta de gastos (opcional)", "FieldLabel"))
+        form.addWidget(self.target)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel = QPushButton("Cancelar")
+        cancel.setObjectName("Secondary")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Salvar grupo")
+        save.setObjectName("Primary")
+        save.clicked.connect(self._save)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        form.addLayout(buttons)
+        add_frameless_dialog_bar(self)
+
+    def _save(self) -> None:
+        try:
+            if self.event:
+                self.database.update_split_event(
+                    self.event["id"], self.name.text(), self.description.text(), self.target.value()
+                )
+            else:
+                self.database.add_split_event(self.name.text(), self.description.text(), self.target.value())
+        except (ValueError, OSError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "Confira os dados", str(error))
+            return
+        self.saved.emit()
+        self.accept()
+
+
+class SplitExpenseDialog(QDialog):
+    saved = Signal()
+
+    def __init__(
+        self, database: Database, event_id: int,
+        parent: QWidget | None = None, existing_people: list[str] | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.database = database
+        self.event_id = event_id
+        self.setWindowTitle("Nova despesa compartilhada · Summit")
+        self.setModal(True)
+        self.setMinimumWidth(540)
+        form = QVBoxLayout(self)
+        form.setContentsMargins(26, 24, 26, 24)
+        form.setSpacing(10)
+        form.addWidget(label("Nova despesa compartilhada", "PageTitle"))
+        form.addWidget(label("Registre quem pagou e quem divide este gasto.", "Muted"))
+        self.description = text_field("Ex.: Pousada, jantar, material")
+        self.amount = money_field()
+        self.paid_by = QComboBox()
+        self.paid_by.setEditable(True)
+        for person in existing_people or []:
+            self.paid_by.addItem(person)
+        self.participants = QLineEdit(", ".join(existing_people or []))
+        self.participants.setPlaceholderText("Nomes separados por vírgula")
+        self.expense_date = DateField()
+        grid = QGridLayout()
+        fields = [
+            ("Descrição", self.description), ("Valor", self.amount),
+            ("Quem pagou", self.paid_by), ("Participantes", self.participants),
+            ("Data", self.expense_date),
+        ]
+        for index, (title, widget) in enumerate(fields):
+            add_form_field(grid, index, title, widget)
+        form.addLayout(grid)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel = QPushButton("Cancelar")
+        cancel.setObjectName("Secondary")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Salvar despesa")
+        save.setObjectName("Primary")
+        save.clicked.connect(self._save)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        form.addLayout(buttons)
+        add_frameless_dialog_bar(self)
+
+    def _save(self) -> None:
+        participants = [part.strip() for part in self.participants.text().split(",")]
+        try:
+            self.database.add_split_expense(
+                self.event_id, self.description.text(), self.amount.value(),
+                self.paid_by.currentText(), participants, self.expense_date.iso_date(),
+            )
+        except (ValueError, OSError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "Confira os dados", str(error))
+            return
+        self.saved.emit()
+        self.accept()
+
+
+class SplitPage(QWidget):
+    """Shared-expense groups (Splitwise style): who paid what and balances."""
+
+    def __init__(
+        self,
+        events: list[dict[str, Any]],
+        expenses_for: Callable[[int], list[dict[str, Any]]],
+        add_event: Callable[[], None],
+        edit_event: Callable[[dict[str, Any]], None],
+        delete_event: Callable[[dict[str, Any]], None],
+        add_expense: Callable[[dict[str, Any]], None],
+        delete_expense: Callable[[dict[str, Any]], None],
+    ) -> None:
+        super().__init__()
+        page = QVBoxLayout(self)
+        page.setContentsMargins(0, 0, 0, 0)
+        header = QHBoxLayout()
+        copy = QVBoxLayout()
+        copy.addWidget(label("Divisão de despesas", "PageTitle"))
+        copy.addWidget(label("Divida custos de viagens, reformas e projetos entre participantes.", "Muted"))
+        header.addLayout(copy)
+        header.addStretch()
+        add = QPushButton("+  Novo grupo")
+        add.setObjectName("PagePrimary")
+        add.clicked.connect(add_event)
+        header.addWidget(add)
+        page.addLayout(header)
+        page.addSpacing(14)
+
+        if not events:
+            empty = Panel("Nenhum grupo ainda", "Crie um grupo para começar a dividir despesas")
+            empty.body.addWidget(label(
+                "Ideal para viagens em grupo, obras, reformas ou qualquer projeto compartilhado.", "Muted", True
+            ))
+            page.addWidget(empty)
+            page.addStretch()
+            return
+
+        for event in events:
+            expenses = expenses_for(event["id"])
+            total = sum(float(item["amount"]) for item in expenses)
+            panel = Panel(event["name"], event["description"] or "Grupo compartilhado")
+            actions = QHBoxLayout()
+            actions.addStretch()
+            actions.addWidget(action_widget(
+                lambda _checked=False, current=event: edit_event(current),
+                lambda _checked=False, current=event: delete_event(current),
+            ))
+            panel.body.itemAt(0).layout().addLayout(actions)
+
+            meta = QHBoxLayout()
+            meta.addWidget(label(f"Total do grupo  {brl(total)}", "ColumnTotal"))
+            meta.addStretch()
+            target = float(event.get("target_amount") or 0)
+            if target:
+                meta.addWidget(label(f"Meta  {brl(target)} · {round(total / target * 100)}% usado", "Tiny"))
+            panel.body.addLayout(meta)
+
+            people: list[str] = []
+            paid: dict[str, float] = {}
+            owes: dict[str, float] = {}
+            for item in expenses:
+                amount = float(item["amount"])
+                payer = item["paid_by"]
+                participants = [part.strip() for part in item["participants"].split(",") if part.strip()]
+                for person in [payer] + participants:
+                    if person not in people:
+                        people.append(person)
+                paid[payer] = paid.get(payer, 0) + amount
+                share = amount / max(len(participants), 1)
+                for person in participants:
+                    owes[person] = owes.get(person, 0) + share
+
+            if people:
+                balance_text = "  ·  ".join(
+                    f"{person}: {brl(paid.get(person, 0) - owes.get(person, 0))}"
+                    for person in people
+                )
+                panel.body.addWidget(label(f"Saldo por pessoa (positivo = a receber)  {balance_text}", "Tiny", True))
+
+            for item in expenses:
+                row = QHBoxLayout()
+                row.addWidget(label(item["description"]))
+                row.addStretch()
+                row.addWidget(label(
+                    f'{item["paid_by"]} pagou {brl(float(item["amount"]))} · {item["participants"]}', "Tiny"
+                ))
+                remove = QPushButton("Excluir")
+                remove.setObjectName("DangerButton")
+                remove.clicked.connect(lambda _checked=False, current=item: delete_expense(current))
+                row.addWidget(remove)
+                panel.body.addLayout(row)
+            if not expenses:
+                panel.body.addWidget(label("Nenhuma despesa registrada neste grupo.", "Muted"))
+            add_expense_button = QPushButton("+  Adicionar despesa")
+            add_expense_button.setObjectName("SmallButton")
+            add_expense_button.clicked.connect(lambda _checked=False, current=event: add_expense(current))
+            panel.body.addSpacing(8)
+            panel.body.addWidget(add_expense_button)
+            page.addWidget(panel)
+        page.addStretch()
+
+
 class SettingsPage(QWidget):
     def __init__(
         self,
@@ -2168,9 +2607,13 @@ class SettingsPage(QWidget):
         save_profile: Callable[[str, str], None],
         change_theme: Callable[[str, str], None],
         backup: Callable[[], None],
+        database: Database | None = None,
+        categories_changed: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
         self.settings = settings
+        self.database = database
+        self.categories_changed = categories_changed
         self.change_theme = change_theme
         workspace = snapshot.get("workspace") or {}
 
@@ -2213,9 +2656,29 @@ class SettingsPage(QWidget):
         dark_button = QPushButton("Escuro")
         light_button = QPushButton("Claro")
         for button in (dark_button, light_button):
-            button.setObjectName("Secondary")
             button.setCheckable(True)
             button.setMinimumWidth(110)
+        # Fixed, theme-independent colors so each swatch stays legible no
+        # matter which theme is currently active: "Escuro" always uses the
+        # same tint as a selected nav item in dark mode, "Claro" always uses
+        # the dark theme's page background — neither ever blends into the
+        # surrounding (possibly opposite) theme.
+        # Fixed, high-contrast swatches that stay legible in BOTH themes:
+        # the dark swatch is near-black with white text, the light swatch is
+        # near-white with dark text, and the selected one gets the brand
+        # purple border as the active indicator.
+        dark_button.setStyleSheet(
+            "QPushButton{background:#0c0912;color:#ffffff;border:2px solid #444;"
+            "border-radius:9px;padding:9px 14px;font-weight:600;}"
+            f"QPushButton:checked{{border:2px solid {DEFAULT_ACCENT};}}"
+            "QPushButton:hover{border-color:#8c8298;}"
+        )
+        light_button.setStyleSheet(
+            "QPushButton{background:#f5f3fa;color:#221f29;border:2px solid #9a93a8;"
+            "border-radius:9px;padding:9px 14px;font-weight:600;}"
+            f"QPushButton:checked{{border:2px solid {DEFAULT_ACCENT};}}"
+            "QPushButton:hover{border-color:#56506e;}"
+        )
         dark_button.setChecked(settings["theme_mode"] == "dark")
         light_button.setChecked(settings["theme_mode"] == "light")
 
@@ -2239,6 +2702,38 @@ class SettingsPage(QWidget):
         ))
         page.addWidget(theme_panel)
 
+        category_panel = Panel("Categorias", "Catálogo usado nos lançamentos e limites mensais")
+        category_panel.body.addWidget(label(
+            "As categorias predefinidas não podem ser alteradas; personalize criando as suas "
+            "abaixo ou diretamente ao digitar no campo de categoria de um lançamento.", "Tiny", True
+        ))
+        category_panel.body.addSpacing(8)
+        new_category_row = QHBoxLayout()
+        self.new_category_field = text_field("Nova categoria personalizada")
+        add_category_button = QPushButton("+  Criar categoria")
+        add_category_button.setObjectName("Secondary")
+        add_category_button.clicked.connect(self._create_category)
+        new_category_row.addWidget(self.new_category_field, 1)
+        new_category_row.addWidget(add_category_button)
+        category_panel.body.addLayout(new_category_row)
+        category_panel.body.addSpacing(8)
+        custom_categories = [item for item in database.categories() if not item["predefined"]]
+        if custom_categories:
+            for category in custom_categories:
+                row = QHBoxLayout()
+                row.addWidget(label(category["name"]))
+                row.addStretch()
+                remove = QPushButton("Excluir")
+                remove.setObjectName("DangerButton")
+                remove.clicked.connect(
+                    lambda _checked=False, current=category: self._delete_category(current)
+                )
+                row.addWidget(remove)
+                category_panel.body.addLayout(row)
+        else:
+            category_panel.body.addWidget(label("Nenhuma categoria personalizada ainda.", "Muted"))
+        page.addWidget(category_panel)
+
         data_panel = Panel("Dados", "Guarde uma cópia do seu banco de dados local")
         data_panel.body.addWidget(label(
             "O Summit guarda tudo em um arquivo local no seu computador. "
@@ -2255,11 +2750,210 @@ class SettingsPage(QWidget):
         page.addWidget(data_panel)
         page.addStretch()
 
+    def _create_category(self) -> None:
+        if self.database is None:
+            return
+        name = self.new_category_field.text()
+        try:
+            self.database.add_category(name, "expense")
+        except (ValueError, OSError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "Não foi possível criar", str(error))
+            return
+        if self.categories_changed:
+            self.categories_changed()
+
+    def _delete_category(self, category: dict[str, Any]) -> None:
+        if self.database is None or not confirm_delete(self, f'a categoria “{category["name"]}”'):
+            return
+        try:
+            self.database.delete_category(category["id"])
+        except (ValueError, OSError, sqlite3.Error) as error:
+            QMessageBox.warning(self, "Não foi possível excluir", str(error))
+            return
+        if self.categories_changed:
+            self.categories_changed()
+
+
+class WindowTitleBar(QWidget):
+    """A minimal frameless-window title bar: no icon or text, just window controls."""
+
+    def __init__(self, window: QMainWindow) -> None:
+        super().__init__(window)
+        self._window = window
+        self.setObjectName("WindowTitleBar")
+        # A little extra headroom so the custom bar is never clipped at the
+        # top of the frameless window on Windows.
+        self.setFixedHeight(38)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 0, 2)
+        layout.setSpacing(0)
+        layout.addStretch()
+        self._max_button = self._control_button("▢", self._toggle_maximize)
+        layout.addWidget(self._control_button("–", window.showMinimized))
+        layout.addWidget(self._max_button)
+        layout.addWidget(self._control_button("×", window.close, danger=True))
+
+    def _control_button(self, text: str, handler: Callable[[], Any], danger: bool = False) -> QPushButton:
+        button = QPushButton(text)
+        button.setObjectName("WindowControlDanger" if danger else "WindowControl")
+        button.setFixedSize(44, 36)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(handler)
+        return button
+
+    def _toggle_maximize(self) -> None:
+        if self._window.isMaximized():
+            self._window.showNormal()
+        else:
+            self._window.showMaximized()
+
+    def mousePressEvent(self, event: Any) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            handle = self._window.windowHandle()
+            if handle is not None:
+                handle.startSystemMove()
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event: Any) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._toggle_maximize()
+        super().mouseDoubleClickEvent(event)
+
+
+class _FramelessBody(QWidget):
+    """Wraps a window's central widget with a title bar and a corner size grip."""
+
+    def __init__(self, title_bar: WindowTitleBar, central: QWidget) -> None:
+        super().__init__()
+        self.setObjectName("Root")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(title_bar)
+        layout.addWidget(central, 1)
+        self._grip = QSizeGrip(self)
+        self._grip.setFixedSize(16, 16)
+        self._grip.raise_()
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        self._grip.move(self.width() - self._grip.width(), self.height() - self._grip.height())
+
+
+def make_frameless(window: QMainWindow) -> WindowTitleBar:
+    """Strip the native title bar/border from ``window`` and add a minimal one.
+
+    Removes the OS chrome (icon, exe name, native buttons) in favor of a
+    single solid-color window with just minimize/maximize/close controls,
+    draggable via the title bar and resizable via a corner size grip.
+    """
+    window.setWindowIcon(app_icon())
+    window.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+    title_bar = WindowTitleBar(window)
+    central = window.centralWidget()
+    window.setCentralWidget(_FramelessBody(title_bar, central))
+    return title_bar
+
+
+class _DialogTitleBar(QWidget):
+    """A minimal draggable, close-only strip for frameless dialogs."""
+
+    def __init__(self, dialog: QDialog) -> None:
+        super().__init__(dialog)
+        self._dialog = dialog
+        self.setObjectName("WindowTitleBar")
+        self.setFixedHeight(28)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addStretch()
+        close_button = QPushButton("×")
+        close_button.setObjectName("WindowControlDanger")
+        close_button.setFixedSize(40, 28)
+        close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_button.clicked.connect(dialog.reject)
+        layout.addWidget(close_button)
+
+    def mousePressEvent(self, event: Any) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            handle = self._dialog.windowHandle()
+            if handle is not None:
+                handle.startSystemMove()
+        super().mousePressEvent(event)
+
+
+def add_frameless_dialog_bar(dialog: QDialog) -> None:
+    """Strip a dialog's native title bar/border and add a minimal close strip."""
+    dialog.setWindowIcon(app_icon())
+    dialog.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+    existing_layout = dialog.layout()
+    if isinstance(existing_layout, QVBoxLayout):
+        existing_layout.insertWidget(0, _DialogTitleBar(dialog))
+
+
+class ConfirmOverlay(QDialog):
+    """A translucent full-window confirmation card, replacing native QMessageBox Yes/No."""
+
+    def __init__(
+        self,
+        parent: QWidget,
+        title: str,
+        message: str,
+        confirm_text: str = "Confirmar",
+        danger: bool = False,
+    ) -> None:
+        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setModal(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card = QFrame()
+        card.setObjectName("Panel")
+        card.setFixedWidth(380)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(26, 24, 26, 20)
+        card_layout.setSpacing(10)
+        card_layout.addWidget(label(title, "PanelTitle"))
+        card_layout.addWidget(label(message, "Muted", True))
+        card_layout.addSpacing(10)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel = QPushButton("Cancelar")
+        cancel.setObjectName("Secondary")
+        cancel.clicked.connect(self.reject)
+        confirm = QPushButton(confirm_text)
+        confirm.setObjectName("DangerAction" if danger else "Primary")
+        confirm.clicked.connect(self.accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(confirm)
+        card_layout.addLayout(buttons)
+        outer.addWidget(card)
+        window = parent.window() if parent is not None else None
+        if window is not None:
+            self.setGeometry(window.geometry())
+
+    def paintEvent(self, _event: Any) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor(4, 2, 8, 150))
+
+    @staticmethod
+    def ask(
+        parent: QWidget,
+        title: str,
+        message: str,
+        confirm_text: str = "Confirmar",
+        danger: bool = False,
+    ) -> bool:
+        overlay = ConfirmOverlay(parent, title, message, confirm_text, danger)
+        return overlay.exec() == QDialog.DialogCode.Accepted
+
 
 class MainWindow(QMainWindow):
     NAVIGATION = (
         "Visão geral", "Movimentações", "Fixos", "Contas", "Dívidas",
-        "Planejamento", "Investimentos", "Relatórios", "Configurações",
+        "Planejamento", "Divisão", "Investimentos", "Relatórios", "Configurações",
     )
 
     def __init__(self, database: Database) -> None:
@@ -2293,6 +2987,7 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.pages)
         shell.addWidget(content, 1)
         self.setCentralWidget(root)
+        make_frameless(self)
         self._refresh_pages()
 
     def _sidebar(self) -> QWidget:
@@ -2351,8 +3046,10 @@ class MainWindow(QMainWindow):
         copy.addWidget(label("Aqui está o pulso das suas finanças hoje.", "Tiny"))
         layout.addLayout(copy)
         layout.addStretch()
-        self.privacy_button = QPushButton("◉  Ocultar valores")
+        self.privacy_button = QPushButton("  Valores")
         self.privacy_button.setObjectName("Secondary")
+        self.privacy_button.setIcon(eye_icon(closed=False, color="#f4f0f8"))
+        self.privacy_button.setIconSize(QSize(16, 16))
         self.privacy_button.setCheckable(True)
         self.privacy_button.setToolTip("Ocultar todos os valores financeiros exibidos")
         self.privacy_button.clicked.connect(self._toggle_values)
@@ -2365,7 +3062,8 @@ class MainWindow(QMainWindow):
 
     def _toggle_values(self, hidden: bool) -> None:
         set_values_hidden(hidden)
-        self.privacy_button.setText("○  Mostrar valores" if hidden else "◉  Ocultar valores")
+        self.privacy_button.setText("  Valores")
+        self.privacy_button.setIcon(eye_icon(closed=hidden, color="#8562ef" if hidden else "#f4f0f8"))
         self.privacy_button.setToolTip(
             "Mostrar os valores financeiros" if hidden else "Ocultar todos os valores financeiros exibidos"
         )
@@ -2434,6 +3132,15 @@ class MainWindow(QMainWindow):
                 self._edit_budget,
                 self._delete_budget,
             ),
+            SplitPage(
+                snapshot.get("split_events", []),
+                self.database.split_expenses,
+                self._new_split_event,
+                self._edit_split_event,
+                self._delete_split_event,
+                self._new_split_expense,
+                self._delete_split_expense,
+            ),
             InvestmentsPage(
                 snapshot["investments"],
                 self._new_investment,
@@ -2447,6 +3154,8 @@ class MainWindow(QMainWindow):
                 self._save_profile,
                 self._change_theme,
                 self._backup_database,
+                database=self.database,
+                categories_changed=self._refresh_pages,
             ),
         ]
         self.page_scrolls = []
@@ -2494,14 +3203,13 @@ class MainWindow(QMainWindow):
             (item["name"] for item in self.database.accounts() if item["id"] == transaction["account_id"]),
             "a conta selecionada",
         )
-        answer = QMessageBox.question(
+        confirmed = ConfirmOverlay.ask(
             self,
             "Confirmar recebimento",
-            f'Confirmar que {brl(float(transaction["amount"]))} de “{transaction["description"]}” entrou em {account}?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            f'Confirmar que {brl(float(transaction["amount"]), hidden=False)} de “{transaction["description"]}” entrou em {account}?',
+            confirm_text="Confirmar recebimento",
         )
-        if answer == QMessageBox.StandardButton.Yes:
+        if confirmed:
             self._delete_and_refresh(
                 lambda: self.database.confirm_income_received(transaction["id"]),
                 "Não foi possível confirmar o recebimento",
@@ -2555,6 +3263,36 @@ class MainWindow(QMainWindow):
             self._delete_and_refresh(
                 lambda: self.database.delete_budget(budget["id"]),
                 "Não foi possível excluir o limite",
+            )
+
+    def _new_split_event(self, _checked: bool = False) -> None:
+        self._open_dialog(SplitEventDialog(self.database, self))
+
+    def _edit_split_event(self, event: dict[str, Any]) -> None:
+        self._open_dialog(SplitEventDialog(self.database, self, event=event))
+
+    def _delete_split_event(self, event: dict[str, Any]) -> None:
+        if confirm_delete(self, f'o grupo “{event["name"]}” e todas as suas despesas'):
+            self._delete_and_refresh(
+                lambda: self.database.delete_split_event(event["id"]),
+                "Não foi possível excluir o grupo",
+            )
+
+    def _new_split_expense(self, event: dict[str, Any]) -> None:
+        expenses = self.database.split_expenses(event["id"])
+        people: list[str] = []
+        for item in expenses:
+            for person in (item["paid_by"], *[part.strip() for part in item["participants"].split(",")]):
+                if person and person not in people:
+                    people.append(person)
+        dialog = SplitExpenseDialog(self.database, event["id"], self, existing_people=people)
+        self._open_dialog(dialog)
+
+    def _delete_split_expense(self, expense: dict[str, Any]) -> None:
+        if confirm_delete(self, f'a despesa “{expense["description"]}”'):
+            self._delete_and_refresh(
+                lambda: self.database.delete_split_expense(expense["id"]),
+                "Não foi possível excluir a despesa",
             )
 
     def _new_investment(self, _checked: bool = False) -> None:
@@ -2625,6 +3363,7 @@ class OnboardingWindow(QMainWindow):
         shell.addWidget(self._welcome_panel(), 9)
         shell.addWidget(self._form_panel(), 11)
         self.setCentralWidget(root)
+        make_frameless(self)
 
     def _welcome_panel(self) -> QWidget:
         panel = QFrame()
@@ -2671,6 +3410,7 @@ class OnboardingWindow(QMainWindow):
         self.initial_balance.setRange(-999_999_999, 999_999_999)
         self.initial_balance.setDecimals(2)
         self.initial_balance.setPrefix("R$ ")
+        self.initial_balance.setButtonSymbols(QAbstractSpinBox.NoButtons)
         self.form_stack.addWidget(self._step_widget("VAMOS COMEÇAR", "Como podemos chamar você?", "Esse nome será usado para deixar sua experiência mais pessoal.", "Seu nome", self.manager))
         self.form_stack.addWidget(self._step_widget("CONTE UM POUCO", "Qual é o seu momento?", "Pode ser sua casa, profissão, estúdio ou atividade principal.", "Atividade ou espaço", self.business))
 

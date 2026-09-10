@@ -6,6 +6,7 @@ import sys
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
+from summit.ui import app_icon
 from summit.database import Database
 from summit.theme import build_stylesheet
 from summit.ui import MainWindow, OnboardingWindow
@@ -16,6 +17,7 @@ class SummitApplication:
         self.app = QApplication(sys.argv)
         self.app.setApplicationName("Summit")
         self.app.setOrganizationName("Summit")
+        self.app.setWindowIcon(app_icon())
         self.app.setStyle("Fusion")
         self.database = Database()
         settings = self.database.settings()

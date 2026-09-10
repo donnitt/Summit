@@ -141,6 +141,7 @@ def calculate(
             day_items = [item for item in paid if _parse(item["transaction_date"]) == current]
             cash_flow.append({
                 "label": day_label,
+                "range": current.strftime("%d/%m"),
                 "income": total([item for item in day_items if item["kind"] == "income"]),
                 "expense": total([item for item in day_items if item["kind"] == "expense"]),
             })
@@ -151,6 +152,7 @@ def calculate(
             month_items = [item for item in paid if in_month(item, today.year, month_index)]
             cash_flow.append({
                 "label": month_label,
+                "range": f"{month_label}. {today.year}",
                 "income": total([item for item in month_items if item["kind"] == "income"]),
                 "expense": total([item for item in month_items if item["kind"] == "expense"]),
             })
@@ -162,12 +164,16 @@ def calculate(
         week_number = 1
         while cursor <= period_end:
             week_end = cursor + timedelta(days=6)
+            visible_start = max(period_start, cursor)
+            visible_end = min(period_end, week_end)
             week_items = [
                 item for item in paid
-                if max(period_start, cursor) <= _parse(item["transaction_date"]) <= min(period_end, week_end)
+                if visible_start <= _parse(item["transaction_date"]) <= visible_end
             ]
             cash_flow.append({
                 "label": f"S{week_number}",
+                "range": f"{visible_start.day}–{visible_end.day}",
+                "range": f"{visible_start.day}–{visible_end.day}",
                 "income": total([item for item in week_items if item["kind"] == "income"]),
                 "expense": total([item for item in week_items if item["kind"] == "expense"]),
             })

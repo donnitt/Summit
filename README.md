@@ -53,6 +53,8 @@ O arquivo fica fora da pasta do programa. Assim, substituir o `Summit.exe` por u
 - alertas de recebimentos no dashboard, com reagendamento e confirmação de entrada em conta;
 - saldo consolidado, fluxo de caixa e gastos por categoria com visão semanal, mensal ou anual;
 - modo de privacidade para ocultar ou revelar todos os valores financeiros em qualquer tela;
+- aba Divisão de despesas (estilo Splitwise): grupos de viagens/reformas, quem pagou o quê e saldo por pessoa;
+- categorias predefinidas e personalizadas com combobox inteligente (filtro em tempo real e criação instantânea), gerenciadas nas Configurações;
 - metas com prazo, aporte mensal e cálculo do ritmo necessário;
 - limites de gastos por categoria comparados ao realizado no mês;
 - carteira de investimentos com posição, custo, rentabilidade e instituição;

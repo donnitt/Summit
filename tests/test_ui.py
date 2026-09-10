@@ -35,7 +35,7 @@ class UiSmokeTest(unittest.TestCase):
             self.assertTrue(database.is_configured())
 
             dashboard = MainWindow(database)
-            self.assertEqual(dashboard.pages.count(), 8)
+            self.assertEqual(dashboard.pages.count(), 10)
             self.assertEqual(dashboard.windowTitle(), "Summit · Visão financeira")
             dashboard._show_page(1)
             movement_page = dashboard.pages.currentWidget()
@@ -81,7 +81,7 @@ class UiSmokeTest(unittest.TestCase):
             )
             dashboard._show_page(4)
             self.assertIsNotNone(dashboard.pages.currentWidget().findChild(QWidget, "DebtsTable"))
-            dashboard._show_page(7)
+            dashboard._show_page(8)
             self.assertGreaterEqual(len(dashboard.pages.currentWidget().findChildren(DateField)), 2)
             dashboard._show_page(0)
             dashboard._change_dashboard_period("annual")

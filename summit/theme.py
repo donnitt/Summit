@@ -200,6 +200,15 @@ QProgressBar {{ background: #2a2133; border: 0; border-radius: 4px; min-height: 
 QProgressBar::chunk {{ background: {accent_soft}; border-radius: 4px; }}
 QMessageBox {{ background: #171120; }}
 QWidget#MiniCalendar {{ background: #171120; border: 1px solid #33283e; border-radius: 14px; }}
+QWidget#WindowTitleBar {{ background: transparent; border: 0; }}
+QPushButton#WindowControl {{
+    background: transparent; border: 0; color: #8c8298; font-size: 13px; font-weight: 600;
+}}
+QPushButton#WindowControl:hover {{ background: #211a2b; color: #eee8f7; }}
+QPushButton#WindowControlDanger {{
+    background: transparent; border: 0; color: #8c8298; font-size: 15px; font-weight: 600;
+}}
+QPushButton#WindowControlDanger:hover {{ background: #7a1830; color: #ffd0d7; }}
 """
 
 
@@ -232,8 +241,8 @@ QLabel#AlertToday {{ color: #c96a1c; font-size: 10px; font-weight: 700; }}
 QLabel#AlertSoon {{ color: #b5860e; font-size: 10px; font-weight: 700; }}
 QLabel#AlertScheduled {{ color: #5c7385; font-size: 10px; }}
 QLabel#AccountHint {{ color: #6e6479; background: #ffffff; border: 1px solid #e2ddee; border-radius: 9px; padding: 10px 12px; }}
-QLabel#Muted {{ color: #857c92; }}
-QLabel#Tiny {{ color: #948b9e; font-size: 10px; }}
+QLabel#Muted {{ color: #6b6278; }}
+QLabel#Tiny {{ color: #756c84; font-size: 10px; }}
 QLabel#PageTitle {{ color: #221f29; font-size: 23px; font-weight: 700; }}
 QLabel#PanelTitle {{ color: #221f29; font-size: 14px; font-weight: 700; }}
 QLabel#MetricValue {{ color: #221f29; font-size: 23px; font-weight: 700; }}
@@ -327,7 +336,7 @@ QLineEdit, QTextEdit, QDoubleSpinBox, QSpinBox, QComboBox, QDateEdit {{
 }}
 QTextEdit {{ padding: 9px 12px; }}
 QLineEdit:focus, QTextEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus, QDateEdit:focus {{ border: 1px solid {accent}; }}
-QLineEdit[placeholderText], QTextEdit[placeholderText] {{ color: #948b9e; }}
+QLineEdit[placeholderText], QTextEdit[placeholderText] {{ color: #6e6479; }}
 QComboBox::drop-down, QDateEdit::drop-down {{ border: 0; width: 26px; }}
 QComboBox QAbstractItemView {{ background: #ffffff; border: 1px solid #ddd6ea; selection-background-color: {accent_tint_strong}; }}
 QCheckBox {{ color: #4a4456; spacing: 9px; padding: 5px 0; }}
@@ -360,6 +369,15 @@ QProgressBar {{ background: #ece6f9; border: 0; border-radius: 4px; min-height: 
 QProgressBar::chunk {{ background: {accent}; border-radius: 4px; }}
 QMessageBox {{ background: #ffffff; }}
 QWidget#MiniCalendar {{ background: #ffffff; border: 1px solid #ddd6ea; border-radius: 14px; }}
+QWidget#WindowTitleBar {{ background: transparent; border: 0; }}
+QPushButton#WindowControl {{
+    background: transparent; border: 0; color: #948b9e; font-size: 13px; font-weight: 600;
+}}
+QPushButton#WindowControl:hover {{ background: #ece6f9; color: #221f29; }}
+QPushButton#WindowControlDanger {{
+    background: transparent; border: 0; color: #948b9e; font-size: 15px; font-weight: 600;
+}}
+QPushButton#WindowControlDanger:hover {{ background: #fbe6ea; color: #971f38; }}
 """
 
 
