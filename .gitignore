@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+build/
+dist/
+*.spec.bak
+*.db
+*.db-*
+.DS_Store
+.pytest_cache/
