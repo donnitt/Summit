@@ -3047,11 +3047,12 @@ class MainWindow(QMainWindow):
     def _header(self) -> QWidget:
         header = QWidget()
         header.setObjectName("Header")
-        header.setFixedHeight(105)
+        header.setFixedHeight(118)
         layout = QHBoxLayout(header)
-        # Extra right margin keeps the header buttons clear of the floating
-        # window controls (minimize/maximize/close) overlaid on the corner.
-        layout.setContentsMargins(34, 19, 170, 18)
+        # Top margin keeps the buttons below the floating window-control
+        # strip (38px) and the right margin keeps them clear of it
+        # horizontally, so neither the drawing nor the clicks overlap.
+        layout.setContentsMargins(34, 44, 170, 8)
         copy = QVBoxLayout()
         copy.setSpacing(2)
         self.section_label = label("VISÃO GERAL", "SectionLabel")
@@ -3079,7 +3080,7 @@ class MainWindow(QMainWindow):
     def _toggle_values(self, hidden: bool) -> None:
         set_values_hidden(hidden)
         self.privacy_button.setText("  Valores")
-        self.privacy_button.setIcon(eye_icon(closed=hidden, color="#8562ef" if hidden else "#f4f0f8"))
+        self.privacy_button.setIcon(eye_icon(closed=hidden, color="#ffffff" if hidden else "#f4f0f8"))
         self.privacy_button.setToolTip(
             "Mostrar os valores financeiros" if hidden else "Ocultar todos os valores financeiros exibidos"
         )
