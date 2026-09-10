@@ -3071,10 +3071,19 @@ class MainWindow(QMainWindow):
         self.privacy_button.setCheckable(True)
         self.privacy_button.setToolTip("Ocultar todos os valores financeiros exibidos")
         self.privacy_button.clicked.connect(self._toggle_values)
+        # Pill look matching the reference design: fully rounded, compact.
+        self.privacy_button.setStyleSheet(
+            "QPushButton{border-radius:17px;padding:9px 18px;}"
+        )
+        layout.addSpacing(12)
         layout.addWidget(self.privacy_button)
         new_transaction = QPushButton("+  Nova movimentação")
         new_transaction.setObjectName("Primary")
         new_transaction.clicked.connect(self._new_transaction)
+        # Same pill shape for the primary action button.
+        new_transaction.setStyleSheet(
+            "QPushButton{border-radius:17px;padding:10px 20px;}"
+        )
         layout.addWidget(new_transaction)
         return header
 
