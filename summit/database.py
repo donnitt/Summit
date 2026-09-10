@@ -189,6 +189,59 @@ class Database:
             self._ensure_column(connection, "investments", "average_price", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(connection, "investments", "notes", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(connection, "investments", "updated_at", "TEXT NOT NULL DEFAULT ''")
+            # Migrate databases created before the categories/split tables:
+            # CREATE TABLE IF NOT EXISTS above cannot add a table that was
+            # created earlier without it, or add missing columns, so handle
+            # both cases explicitly here.
+            category_columns = {row[1] for row in connection.execute("PRAGMA table_info(categories)")}
+            if not category_columns:
+                connection.execute(
+                    """
+                    CREATE TABLE categories (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                        kind TEXT NOT NULL DEFAULT 'expense' CHECK (kind IN ('income', 'expense')),
+                        predefined INTEGER NOT NULL DEFAULT 0 CHECK (predefined IN (0, 1))
+                    )
+                    """
+                )
+            elif "predefined" not in category_columns:
+                self._ensure_column(connection, "categories", "predefined", "INTEGER NOT NULL DEFAULT 1")
+                connection.execute("UPDATE categories SET predefined = 1 WHERE predefined IS NULL")
+            for table, create_sql in (
+                (
+                    "split_events",
+                    """
+                    CREATE TABLE split_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        target_amount REAL NOT NULL DEFAULT 0 CHECK (target_amount >= 0),
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """,
+                ),
+                (
+                    "split_expenses",
+                    """
+                    CREATE TABLE split_expenses (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_id INTEGER NOT NULL REFERENCES split_events(id) ON DELETE CASCADE,
+                        description TEXT NOT NULL,
+                        amount REAL NOT NULL CHECK (amount > 0),
+                        paid_by TEXT NOT NULL,
+                        participants TEXT NOT NULL,
+                        expense_date TEXT NOT NULL
+                    )
+                    """,
+                ),
+            ):
+                if not {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}:
+                    connection.execute(create_sql)
+            if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_split_expenses_event'"
+            ).fetchone() is None:
+                connection.execute("CREATE INDEX IF NOT EXISTS idx_split_expenses_event ON split_expenses(event_id)")
             # Seed the predefined category catalog once.
             if connection.execute("SELECT 1 FROM categories").fetchone() is None:
                 connection.executemany(
