@@ -444,7 +444,7 @@ class CategoryCombo(QComboBox):
         return self.currentText().strip()
 
     def eventFilter(self, source: Any, event: Any) -> bool:
-        if event.type() == QtCore.QEvent.Type.KeyPress and source is self.view():
+        if event.type() == QEvent.Type.KeyPress and source is self.view():
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 if self.view().currentIndex().isValid():
                     self.view().pressed.emit(self.view().currentIndex())
@@ -2847,9 +2847,10 @@ class _FramelessBody(QWidget):
 
     def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)
+        # Pin the strip to the exact width of its three buttons so it can
+        # never expand and swallow clicks meant for the header buttons.
         self._title_bar.setGeometry(
-            self.width() - self._title_bar.sizeHint().width(), 0,
-            self._title_bar.sizeHint().width(), self.TITLE_BAR_HEIGHT,
+            self.width() - 132, 0, 132, self.TITLE_BAR_HEIGHT,
         )
         self._grip.move(self.width() - self._grip.width(), self.height() - self._grip.height())
 
@@ -3065,7 +3066,7 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         self.privacy_button = QPushButton("  Valores")
         self.privacy_button.setObjectName("Secondary")
-        self.privacy_button.setIcon(eye_icon(closed=False, color="#f4f0f8"))
+        self.privacy_button.setIcon(eye_icon(closed=False, color="#807893"))
         self.privacy_button.setIconSize(QSize(16, 16))
         self.privacy_button.setCheckable(True)
         self.privacy_button.setToolTip("Ocultar todos os valores financeiros exibidos")
@@ -3080,7 +3081,9 @@ class MainWindow(QMainWindow):
     def _toggle_values(self, hidden: bool) -> None:
         set_values_hidden(hidden)
         self.privacy_button.setText("  Valores")
-        self.privacy_button.setIcon(eye_icon(closed=hidden, color="#ffffff" if hidden else "#f4f0f8"))
+        # Mid gray reads on both the dark and the light header; white when
+        # hidden so it stays visible on the purple checked background.
+        self.privacy_button.setIcon(eye_icon(closed=hidden, color="#ffffff" if hidden else "#807893"))
         self.privacy_button.setToolTip(
             "Mostrar os valores financeiros" if hidden else "Ocultar todos os valores financeiros exibidos"
         )
