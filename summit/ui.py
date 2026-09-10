@@ -731,11 +731,9 @@ class DashboardPage(QWidget):
             option_button.setCheckable(True)
             option_button.setChecked(option_value == period)
             option_button.setCursor(Qt.CursorShape.PointingHandCursor)
-            # Force legible fixed colors on the selected state regardless of
-            # the active theme (mirrors the Escuro/Claro fix above).
-            option_button.setStyleSheet(
-                f"QPushButton:checked{{background:{DEFAULT_ACCENT};color:#ffffff;}}"
-            )
+            # No inline override here: the theme stylesheet already styles the
+            # checked state with the accent background, white text and the
+            # rounded corners. A widget-level sheet would flatten the radius.
             option_button.clicked.connect(
                 lambda _checked=False, selected=option_value: change_period(selected)
             )
@@ -1037,11 +1035,8 @@ class MovementColumn(QFrame):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: 0; }")
-        scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setMinimumHeight(465)
         container = QWidget()
-        container.setStyleSheet("background: transparent;")
         cards = QVBoxLayout(container)
         cards.setContentsMargins(0, 2, 0, 2)
         cards.setSpacing(8)
@@ -1083,11 +1078,8 @@ class FixedFlowColumn(QFrame):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: 0; }")
-        scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setMinimumHeight(496)
         container = QWidget()
-        container.setStyleSheet("background: transparent;")
         sections = QVBoxLayout(container)
         sections.setContentsMargins(0, 2, 0, 2)
         sections.setSpacing(8)
@@ -1232,7 +1224,6 @@ class AccountsPage(QWidget):
         header.addStretch()
         add = QPushButton("+  Nova conta")
         add.setObjectName("PagePrimary")
-        add.setStyleSheet("background: #8562ef; color: white; border-radius: 10px; padding: 10px 17px; font-weight: 700;")
         add.clicked.connect(add_account)
         header.addWidget(add)
         page.addLayout(header)
@@ -1305,7 +1296,6 @@ class DebtsPage(QWidget):
         header.addStretch()
         add = QPushButton("+  Nova dívida")
         add.setObjectName("PagePrimary")
-        add.setStyleSheet("background: #8562ef; color: white; border-radius: 10px; padding: 10px 17px; font-weight: 700;")
         add.clicked.connect(add_debt)
         header.addWidget(add)
         page.addLayout(header)
@@ -3201,7 +3191,6 @@ class MainWindow(QMainWindow):
             page_scroll.setObjectName("PageScroll")
             page_scroll.setWidgetResizable(True)
             page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            page_scroll.viewport().setStyleSheet("background: transparent;")
             page_scroll.setFrameShape(QFrame.Shape.NoFrame)
             page_scroll.setWidget(wrapper)
             self.page_scrolls.append(page_scroll)

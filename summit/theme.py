@@ -193,6 +193,7 @@ QTableWidget {{
 QTableWidget::item {{ padding: 9px; border-bottom: 1px solid #241c2d; }}
 QHeaderView::section {{ background: #130e1b; color: #776d82; border: 0; padding: 10px; font-size: 10px; }}
 QScrollArea {{ border: 0; background: transparent; }}
+QScrollArea > QWidget, QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: #342943; min-height: 32px; border-radius: 4px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
@@ -362,6 +363,7 @@ QTableWidget {{
 QTableWidget::item {{ padding: 9px; border-bottom: 1px solid #ece7f4; }}
 QHeaderView::section {{ background: #f7f4fc; color: #857c92; border: 0; padding: 10px; font-size: 10px; }}
 QScrollArea {{ border: 0; background: transparent; }}
+QScrollArea > QWidget, QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: #ddd6ea; min-height: 32px; border-radius: 4px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
