@@ -2785,7 +2785,7 @@ class WindowTitleBar(QWidget):
         # top of the frameless window on Windows.
         self.setFixedHeight(38)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 2, 0, 2)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addStretch()
         self._max_button = self._control_button("▢", self._toggle_maximize)
@@ -2821,7 +2821,14 @@ class WindowTitleBar(QWidget):
 
 
 class _FramelessBody(QWidget):
-    """Wraps a window's central widget with a title bar and a corner size grip."""
+    """Wraps a window's central widget with a title bar and a corner size grip.
+
+    The title bar is overlaid on top of the central widget (floating over
+    its top-right corner) instead of stacked above it, so window controls
+    never push the app's own sidebar/header content down or overlap it.
+    """
+
+    TITLE_BAR_HEIGHT = 38
 
     def __init__(self, title_bar: WindowTitleBar, central: QWidget) -> None:
         super().__init__()
@@ -2829,14 +2836,21 @@ class _FramelessBody(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(title_bar)
         layout.addWidget(central, 1)
+        self._title_bar = title_bar
+        self._title_bar.setParent(self)
+        self._title_bar.setFixedHeight(self.TITLE_BAR_HEIGHT)
+        self._title_bar.raise_()
         self._grip = QSizeGrip(self)
         self._grip.setFixedSize(16, 16)
         self._grip.raise_()
 
     def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)
+        self._title_bar.setGeometry(
+            self.width() - self._title_bar.sizeHint().width(), 0,
+            self._title_bar.sizeHint().width(), self.TITLE_BAR_HEIGHT,
+        )
         self._grip.move(self.width() - self._grip.width(), self.height() - self._grip.height())
 
 
@@ -3035,7 +3049,9 @@ class MainWindow(QMainWindow):
         header.setObjectName("Header")
         header.setFixedHeight(105)
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(34, 19, 34, 18)
+        # Extra right margin keeps the header buttons clear of the floating
+        # window controls (minimize/maximize/close) overlaid on the corner.
+        layout.setContentsMargins(34, 19, 170, 18)
         copy = QVBoxLayout()
         copy.setSpacing(2)
         self.section_label = label("VISÃO GERAL", "SectionLabel")
